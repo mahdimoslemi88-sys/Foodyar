@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { SetStateAction } from 'react';
+import { supabase } from '../services/supabase';
 import {
   Ingredient, MenuItem, Sale, Expense, Supplier, WasteRecord, Shift, PrepTask,
   PurchaseInvoice, AuditLog, AIRun, SaleItem, Customer, SystemSettings, User, 
@@ -59,7 +60,7 @@ export interface RestaurantActions {
   generateOperationalForecast: () => Promise<void>;
   clearMenuAnalysis: () => void;
   checkStockForSale: (cart: {item: MenuItem, quantity: number}[]) => { status: 'OK' | 'BLOCKED' | 'NEEDS_CONFIRMATION', insufficientItems: InsufficientItem[] };
-  processTransaction: (cart: {item: MenuItem, quantity: number}[], paymentDetails: { operator: User, method: PaymentMethod, discount: number, tax: number, shiftId?: string, customerPhoneNumber?: string, pointsUsed?: number }) => { newSale: Sale, inventoryShortage: boolean; prepShortage: boolean; };
+  processTransaction: (cart: {item: MenuItem, quantity: number}[], paymentDetails: { operator: User, method: PaymentMethod, discount: number, tax: number, shiftId?: string, customerPhoneNumber?: string, pointsUsed?: number, walletAmountUsed?: number }) => Promise<{ newSale: Sale, inventoryShortage: boolean; prepShortage: boolean; }>;
   startShift: (startingCash: number, operator: User) => void;
   closeShift: (shiftId: string, actualCash: number, bankDeposit: number) => void;
   // Action Center Actions
@@ -116,21 +117,102 @@ export const useRestaurantStore = create<RestaurantStore>()(
     // --- ACTIONS ---
     initState: (persistedState) => set(persistedState),
 
-    // Simple Setters
-    setInventory: (updater) => set(state => ({ inventory: typeof updater === 'function' ? updater(state.inventory) : updater })),
-    setMenu: (updater) => set(state => ({ menu: typeof updater === 'function' ? updater(state.menu) : updater })),
-    setSales: (updater) => set(state => ({ sales: typeof updater === 'function' ? updater(state.sales) : updater })),
-    setExpenses: (updater) => set(state => ({ expenses: typeof updater === 'function' ? updater(state.expenses) : updater })),
-    setSuppliers: (updater) => set(state => ({ suppliers: typeof updater === 'function' ? updater(state.suppliers) : updater })),
-    setWasteRecords: (updater) => set(state => ({ wasteRecords: typeof updater === 'function' ? updater(state.wasteRecords) : updater })),
-    setShifts: (updater) => set(state => ({ shifts: typeof updater === 'function' ? updater(state.shifts) : updater })),
-    setPrepTasks: (updater) => set(state => ({ prepTasks: typeof updater === 'function' ? updater(state.prepTasks) : updater })),
-    setPurchaseInvoices: (updater) => set(state => ({ purchaseInvoices: typeof updater === 'function' ? updater(state.purchaseInvoices) : updater })),
-    setAuditLogs: (updater) => set(state => ({ auditLogs: typeof updater === 'function' ? updater(state.auditLogs) : updater })),
-    setCustomers: (updater) => set(state => ({ customers: typeof updater === 'function' ? updater(state.customers) : updater })),
-    setManagerTasks: (updater) => set(state => ({ managerTasks: typeof updater === 'function' ? updater(state.managerTasks) : updater })),
-    setSettings: (updater) => set(state => ({ settings: typeof updater === 'function' ? updater(state.settings) : updater })),
-    addTransaction: (transaction) => set(state => ({ transactions: [transaction, ...state.transactions] })),
+    // Simple Setters with Persistence
+    setInventory: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.inventory) : updater;
+            supabase.from('inventory').upsert(next).then(({error}) => error && console.error("Sync error (inventory):", error));
+            return { inventory: next };
+        });
+    },
+    setMenu: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.menu) : updater;
+            supabase.from('menu').upsert(next).then(({error}) => error && console.error("Sync error (menu):", error));
+            return { menu: next };
+        });
+    },
+    setSales: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.sales) : updater;
+            supabase.from('sales').upsert(next).then(({error}) => error && console.error("Sync error (sales):", error));
+            return { sales: next };
+        });
+    },
+    setExpenses: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.expenses) : updater;
+            supabase.from('expenses').upsert(next).then(({error}) => error && console.error("Sync error (expenses):", error));
+            return { expenses: next };
+        });
+    },
+    setSuppliers: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.suppliers) : updater;
+            supabase.from('suppliers').upsert(next).then(({error}) => error && console.error("Sync error (suppliers):", error));
+            return { suppliers: next };
+        });
+    },
+    setWasteRecords: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.wasteRecords) : updater;
+            supabase.from('waste_records').upsert(next).then(({error}) => error && console.error("Sync error (waste):", error));
+            return { wasteRecords: next };
+        });
+    },
+    setShifts: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.shifts) : updater;
+            supabase.from('shifts').upsert(next).then(({error}) => error && console.error("Sync error (shifts):", error));
+            return { shifts: next };
+        });
+    },
+    setPrepTasks: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.prepTasks) : updater;
+            supabase.from('prep_tasks').upsert(next).then(({error}) => error && console.error("Sync error (prep):", error));
+            return { prepTasks: next };
+        });
+    },
+    setPurchaseInvoices: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.purchaseInvoices) : updater;
+            supabase.from('purchase_invoices').upsert(next).then(({error}) => error && console.error("Sync error (invoices):", error));
+            return { purchaseInvoices: next };
+        });
+    },
+    setAuditLogs: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.auditLogs) : updater;
+            supabase.from('audit_logs').upsert(next).then(({error}) => error && console.error("Sync error (logs):", error));
+            return { auditLogs: next };
+        });
+    },
+    setCustomers: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.customers) : updater;
+            supabase.from('customers').upsert(next).then(({error}) => error && console.error("Sync error (customers):", error));
+            return { customers: next };
+        });
+    },
+    setManagerTasks: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.managerTasks) : updater;
+            supabase.from('manager_tasks').upsert(next).then(({error}) => error && console.error("Sync error (tasks):", error));
+            return { managerTasks: next };
+        });
+    },
+    setSettings: (updater) => {
+        set(state => {
+            const next = typeof updater === 'function' ? updater(state.settings) : updater;
+            supabase.from('settings').upsert(next).then(({error}) => error && console.error("Sync error (settings):", error));
+            return { settings: next };
+        });
+    },
+    addTransaction: (transaction) => {
+        set(state => ({ transactions: [transaction, ...state.transactions] }));
+        supabase.from('transactions').insert(transaction).then(({error}) => error && console.error("Sync error (transaction):", error));
+    },
 
     addAuditLogDetailed: (action, entity, entityId, before, after, details, user) => {
       const logEntry: AuditLog = {
@@ -146,6 +228,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
         details,
       };
       set(state => ({ auditLogs: [logEntry, ...state.auditLogs] }));
+      supabase.from('audit_logs').insert(logEntry).then(({error}) => error && console.error("Sync error (audit):", error));
     },
 
     addAuditLog: (action, entity, details) => {
@@ -205,6 +288,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
             operatorName: operator.fullName,
         };
         set(state => ({ shifts: [newShift, ...state.shifts] }));
+        supabase.from('shifts').insert(newShift).then(({error}) => error && console.error("Sync error (shift start):", error));
         addAuditLogDetailed('CREATE', 'SHIFT', newShift.id, null, newShift, `Shift started with starting cash ${startingCash}`, operator);
     },
     closeShift: (shiftId, actualCash, bankDeposit) => {
@@ -235,6 +319,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
         };
         
         set(state => ({ shifts: state.shifts.map(s => s.id === shiftId ? closedShift : s) }));
+        supabase.from('shifts').update(closedShift).eq('id', shiftId).then(({error}) => error && console.error("Sync error (shift close):", error));
         addAuditLogDetailed('SHIFT_CLOSE', 'SHIFT', shiftId, shiftToClose, closedShift, `Shift closed. Discrepancy: ${discrepancy}`, null);
     },
     checkStockForSale: (cart) => {
@@ -270,6 +355,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
         updatedAt: now,
       };
       set(state => ({ managerTasks: [newTask, ...state.managerTasks] }));
+      supabase.from('manager_tasks').insert(newTask).then(({error}) => error && console.error("Sync error (task add):", error));
       addAuditLog('CREATE', 'ACTION_CENTER', `Task created: ${newTask.title}`);
     },
 
@@ -280,6 +366,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
           task.id === taskId ? { ...task, ...updates, updatedAt: Date.now() } : task
         ),
       }));
+      supabase.from('manager_tasks').update({ ...updates, updatedAt: Date.now() }).eq('id', taskId).then(({error}) => error && console.error("Sync error (task update):", error));
       if(updates.status) {
         const task = get().managerTasks.find(t => t.id === taskId);
         addAuditLog('UPDATE', 'ACTION_CENTER', `Task status changed: "${task?.title}" to ${updates.status}`);
@@ -348,7 +435,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
          return newTasksCreated;
     },
     // Complex Business Logic
-    processTransaction: (cart, paymentDetails) => {
+    processTransaction: async (cart, paymentDetails) => {
       const { inventory, prepTasks, customers, settings, addAuditLogDetailed } = get();
       let subtotal = 0;
       const saleItems: SaleItem[] = cart.map(cartItem => {
@@ -436,10 +523,12 @@ export const useRestaurantStore = create<RestaurantStore>()(
           // --- Persist Customer Update ---
           if (isNewCustomer) {
               set(state => ({ customers: [...state.customers, updatedCustomer] }));
+              supabase.from('customers').insert(updatedCustomer).then(({error}) => error && console.error("Sync error (customer insert):", error));
           } else {
               set(state => ({
                   customers: state.customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c)
               }));
+              supabase.from('customers').update(updatedCustomer).eq('id', updatedCustomer.id).then(({error}) => error && console.error("Sync error (customer update):", error));
           }
           
           customerId = updatedCustomer.id;
@@ -527,6 +616,27 @@ export const useRestaurantStore = create<RestaurantStore>()(
               auditLogs: [...newLogs, ...state.auditLogs]
           }));
           
+          // Granular Persistence for Transaction with sequential check for sale
+          const { error: saleError } = await supabase.from('sales').insert(newSale);
+          if (saleError) {
+              console.error("Sale persistence error:", saleError);
+              throw new Error("خطا در ذخیره فاکتور در سرور. لطفا اتصال خود را بررسی کنید.");
+          }
+
+          // Continue with background updates for inventory, prep and logs
+          Promise.all([
+              // We only want to update items that were actually changed to be efficient
+              ...Array.from(inventoryDeductions.keys()).map(id => {
+                  const item = updatedInventory.find(i => i.id === id);
+                  return supabase.from('inventory').update({ currentStock: item?.currentStock }).eq('id', id);
+              }),
+              ...Array.from(prepDeductions.keys()).map(id => {
+                  const task = updatedPrepTasks.find(t => t.id === id);
+                  return supabase.from('prep_tasks').update({ onHand: task?.onHand }).eq('id', id);
+              }),
+              supabase.from('audit_logs').insert(newLogs)
+          ]).catch(err => console.error("Secondary sync error during transaction:", err));
+
           tasksToCreate.forEach(taskDraft => get().addManagerTask(taskDraft));
 
           get().addAuditLogDetailed('CREATE', 'SALE', newSale.id, null, newSale, `فاکتور ${newSale.invoiceNumber} ثبت شد.`, paymentDetails.operator);

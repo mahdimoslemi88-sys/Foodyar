@@ -41,7 +41,8 @@ export const InventoryView: React.FC = () => {
   const totalValue = activeInventory.reduce((acc, i) => acc + calculateInventoryItemValue(i), 0);
 
   const filteredInventory = useMemo(() => {
-    return activeInventory.filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    const query = searchQuery.toLowerCase();
+    return activeInventory.filter(item => item.name.toLowerCase().includes(query));
   }, [activeInventory, searchQuery]);
   
   const handleOpenItemModal = (item?: Ingredient) => {

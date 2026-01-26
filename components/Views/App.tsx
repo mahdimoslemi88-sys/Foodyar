@@ -59,7 +59,7 @@ const AppLogic: React.FC = () => {
             // RLS policies should handle filtering by user_id
             const [
                 inventory, menu, sales, expenses, suppliers, shifts, customers,
-                prepTasks, purchaseInvoices, auditLogs, managerTasks, settings, transactions
+                prepTasks, purchaseInvoices, auditLogs, managerTasks, settings, transactions, waste
             ] = await Promise.all([
                 supabase.from('inventory').select('*'),
                 supabase.from('menu').select('*'),
@@ -74,6 +74,7 @@ const AppLogic: React.FC = () => {
                 supabase.from('manager_tasks').select('*'),
                 supabase.from('settings').select('*').single(),
                 supabase.from('transactions').select('*'),
+                supabase.from('waste_records').select('*'),
             ]);
             
             // Check for errors and initialize state
@@ -94,6 +95,7 @@ const AppLogic: React.FC = () => {
                 managerTasks: managerTasks.data || [],
                 settings: settings.data,
                 transactions: transactions.data || [],
+                wasteRecords: waste.data || [],
             };
             
             initState(loadedState);

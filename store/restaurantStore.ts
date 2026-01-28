@@ -8,6 +8,7 @@ import {
 } from '../types';
 import * as defaultData from '../services/defaultData';
 import * as gemini from '../services/geminiService';
+import { supabase } from '../services/supabase';
 import { calculateRecipeCost } from '../domain/pricing';
 import { nextInvoiceNumber } from '../domain/invoicing';
 import { calculateDeductions, checkStockAvailability } from '../domain/inventory';
@@ -117,20 +118,75 @@ export const useRestaurantStore = create<RestaurantStore>()(
     initState: (persistedState) => set(persistedState),
 
     // Simple Setters
-    setInventory: (updater) => set(state => ({ inventory: typeof updater === 'function' ? updater(state.inventory) : updater })),
-    setMenu: (updater) => set(state => ({ menu: typeof updater === 'function' ? updater(state.menu) : updater })),
-    setSales: (updater) => set(state => ({ sales: typeof updater === 'function' ? updater(state.sales) : updater })),
-    setExpenses: (updater) => set(state => ({ expenses: typeof updater === 'function' ? updater(state.expenses) : updater })),
-    setSuppliers: (updater) => set(state => ({ suppliers: typeof updater === 'function' ? updater(state.suppliers) : updater })),
-    setWasteRecords: (updater) => set(state => ({ wasteRecords: typeof updater === 'function' ? updater(state.wasteRecords) : updater })),
-    setShifts: (updater) => set(state => ({ shifts: typeof updater === 'function' ? updater(state.shifts) : updater })),
-    setPrepTasks: (updater) => set(state => ({ prepTasks: typeof updater === 'function' ? updater(state.prepTasks) : updater })),
-    setPurchaseInvoices: (updater) => set(state => ({ purchaseInvoices: typeof updater === 'function' ? updater(state.purchaseInvoices) : updater })),
-    setAuditLogs: (updater) => set(state => ({ auditLogs: typeof updater === 'function' ? updater(state.auditLogs) : updater })),
-    setCustomers: (updater) => set(state => ({ customers: typeof updater === 'function' ? updater(state.customers) : updater })),
-    setManagerTasks: (updater) => set(state => ({ managerTasks: typeof updater === 'function' ? updater(state.managerTasks) : updater })),
-    setSettings: (updater) => set(state => ({ settings: typeof updater === 'function' ? updater(state.settings) : updater })),
-    addTransaction: (transaction) => set(state => ({ transactions: [transaction, ...state.transactions] })),
+    setInventory: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().inventory) : updater;
+      set({ inventory: next });
+      supabase.from('inventory').upsert(next).then(({error}) => error && console.error("Error persisting inventory:", error));
+    },
+    setMenu: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().menu) : updater;
+      set({ menu: next });
+      supabase.from('menu').upsert(next).then(({error}) => error && console.error("Error persisting menu:", error));
+    },
+    setSales: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().sales) : updater;
+      set({ sales: next });
+      supabase.from('sales').upsert(next).then(({error}) => error && console.error("Error persisting sales:", error));
+    },
+    setExpenses: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().expenses) : updater;
+      set({ expenses: next });
+      supabase.from('expenses').upsert(next).then(({error}) => error && console.error("Error persisting expenses:", error));
+    },
+    setSuppliers: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().suppliers) : updater;
+      set({ suppliers: next });
+      supabase.from('suppliers').upsert(next).then(({error}) => error && console.error("Error persisting suppliers:", error));
+    },
+    setWasteRecords: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().wasteRecords) : updater;
+      set({ wasteRecords: next });
+      supabase.from('waste_records').upsert(next).then(({error}) => error && console.error("Error persisting waste records:", error));
+    },
+    setShifts: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().shifts) : updater;
+      set({ shifts: next });
+      supabase.from('shifts').upsert(next).then(({error}) => error && console.error("Error persisting shifts:", error));
+    },
+    setPrepTasks: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().prepTasks) : updater;
+      set({ prepTasks: next });
+      supabase.from('prep_tasks').upsert(next).then(({error}) => error && console.error("Error persisting prep tasks:", error));
+    },
+    setPurchaseInvoices: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().purchaseInvoices) : updater;
+      set({ purchaseInvoices: next });
+      supabase.from('purchase_invoices').upsert(next).then(({error}) => error && console.error("Error persisting purchase invoices:", error));
+    },
+    setAuditLogs: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().auditLogs) : updater;
+      set({ auditLogs: next });
+      supabase.from('audit_logs').upsert(next).then(({error}) => error && console.error("Error persisting audit logs:", error));
+    },
+    setCustomers: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().customers) : updater;
+      set({ customers: next });
+      supabase.from('customers').upsert(next).then(({error}) => error && console.error("Error persisting customers:", error));
+    },
+    setManagerTasks: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().managerTasks) : updater;
+      set({ managerTasks: next });
+      supabase.from('manager_tasks').upsert(next).then(({error}) => error && console.error("Error persisting manager tasks:", error));
+    },
+    setSettings: (updater) => {
+      const next = typeof updater === 'function' ? updater(get().settings) : updater;
+      set({ settings: next });
+      supabase.from('settings').upsert(next).then(({error}) => error && console.error("Error persisting settings:", error));
+    },
+    addTransaction: (transaction) => {
+      set(state => ({ transactions: [transaction, ...state.transactions] }));
+      supabase.from('transactions').insert(transaction).then(({error}) => error && console.error("Error persisting transaction:", error));
+    },
 
     addAuditLogDetailed: (action, entity, entityId, before, after, details, user) => {
       const logEntry: AuditLog = {
@@ -146,6 +202,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
         details,
       };
       set(state => ({ auditLogs: [logEntry, ...state.auditLogs] }));
+      supabase.from('audit_logs').insert(logEntry).then(({error}) => error && console.error("Error persisting audit log:", error));
     },
 
     addAuditLog: (action, entity, details) => {
@@ -205,6 +262,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
             operatorName: operator.fullName,
         };
         set(state => ({ shifts: [newShift, ...state.shifts] }));
+        supabase.from('shifts').insert(newShift).then(({error}) => error && console.error("Error persisting shift start:", error));
         addAuditLogDetailed('CREATE', 'SHIFT', newShift.id, null, newShift, `Shift started with starting cash ${startingCash}`, operator);
     },
     closeShift: (shiftId, actualCash, bankDeposit) => {
@@ -235,6 +293,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
         };
         
         set(state => ({ shifts: state.shifts.map(s => s.id === shiftId ? closedShift : s) }));
+        supabase.from('shifts').update(closedShift).eq('id', shiftId).then(({error}) => error && console.error("Error persisting shift close:", error));
         addAuditLogDetailed('SHIFT_CLOSE', 'SHIFT', shiftId, shiftToClose, closedShift, `Shift closed. Discrepancy: ${discrepancy}`, null);
     },
     checkStockForSale: (cart) => {
@@ -270,19 +329,24 @@ export const useRestaurantStore = create<RestaurantStore>()(
         updatedAt: now,
       };
       set(state => ({ managerTasks: [newTask, ...state.managerTasks] }));
+      supabase.from('manager_tasks').insert(newTask).then(({error}) => error && console.error("Error persisting manager task:", error));
       addAuditLog('CREATE', 'ACTION_CENTER', `Task created: ${newTask.title}`);
     },
 
     updateManagerTask: (taskId, updates) => {
       const { addAuditLog } = get();
+      const taskBefore = get().managerTasks.find(t => t.id === taskId);
+      if (!taskBefore) return;
+
+      const updatedTask = { ...taskBefore, ...updates, updatedAt: Date.now() };
       set(state => ({
         managerTasks: state.managerTasks.map(task => 
-          task.id === taskId ? { ...task, ...updates, updatedAt: Date.now() } : task
+          task.id === taskId ? updatedTask : task
         ),
       }));
+      supabase.from('manager_tasks').update(updatedTask).eq('id', taskId).then(({error}) => error && console.error("Error persisting manager task update:", error));
       if(updates.status) {
-        const task = get().managerTasks.find(t => t.id === taskId);
-        addAuditLog('UPDATE', 'ACTION_CENTER', `Task status changed: "${task?.title}" to ${updates.status}`);
+        addAuditLog('UPDATE', 'ACTION_CENTER', `Task status changed: "${taskBefore.title}" to ${updates.status}`);
       }
     },
 
@@ -441,6 +505,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
                   customers: state.customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c)
               }));
           }
+          supabase.from('customers').upsert(updatedCustomer).then(({error}) => error && console.error("Error persisting customer update:", error));
           
           customerId = updatedCustomer.id;
       }
@@ -526,6 +591,14 @@ export const useRestaurantStore = create<RestaurantStore>()(
               prepTasks: updatedPrepTasks,
               auditLogs: [...newLogs, ...state.auditLogs]
           }));
+
+          const affectedInventory = updatedInventory.filter(item => inventoryDeductions.has(item.id));
+          const affectedPrepTasks = updatedPrepTasks.filter(task => prepDeductions.has(task.id));
+
+          supabase.from('sales').insert(newSale).then(({error}) => error && console.error("Error persisting sale:", error));
+          if (affectedInventory.length > 0) supabase.from('inventory').upsert(affectedInventory).then(({error}) => error && console.error("Error persisting inventory update:", error));
+          if (affectedPrepTasks.length > 0) supabase.from('prep_tasks').upsert(affectedPrepTasks).then(({error}) => error && console.error("Error persisting prep tasks update:", error));
+          if (newLogs.length > 0) supabase.from('audit_logs').insert(newLogs).then(({error}) => error && console.error("Error persisting transaction logs:", error));
           
           tasksToCreate.forEach(taskDraft => get().addManagerTask(taskDraft));
 

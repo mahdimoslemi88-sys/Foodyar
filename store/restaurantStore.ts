@@ -12,6 +12,7 @@ import { calculateRecipeCost } from '../domain/pricing';
 import { nextInvoiceNumber } from '../domain/invoicing';
 import { calculateDeductions, checkStockAvailability } from '../domain/inventory';
 import { determineCustomerSegment } from '../domain/customer';
+import { supabase } from '../services/supabase';
 
 // Define the shape of the state and actions
 export interface RestaurantState {
@@ -49,22 +50,22 @@ export interface RestaurantActions {
   setAuditLogs: (updater: SetStateAction<AuditLog[]>) => void;
   setCustomers: (updater: SetStateAction<Customer[]>) => void;
   setManagerTasks: (updater: SetStateAction<ManagerTask[]>) => void;
-  setSettings: (updater: SetStateAction<SystemSettings>) => void;
+  setSettings: (updater: SetStateAction<SystemSettings>) => Promise<void>;
   addTransaction: (transaction: Transaction) => void;
-  addAuditLog: (action: AuditLog['action'], entity: AuditLog['entity'], details: string) => void;
-  addAuditLogDetailed: (action: AuditLog['action'], entity: AuditLog['entity'], entityId: string | null, before: any | null, after: any | null, details: string, user?: { id: string, fullName: string } | null) => void;
+  addAuditLog: (action: AuditLog['action'], entity: AuditLog['entity'], details: string) => Promise<void>;
+  addAuditLogDetailed: (action: AuditLog['action'], entity: AuditLog['entity'], entityId: string | null, before: any | null, after: any | null, details: string, user?: { id: string, fullName: string } | null) => Promise<void>;
   resetData: () => void;
   generateMenuAnalysis: () => Promise<void>;
   generateProcurementForecast: () => Promise<void>;
   generateOperationalForecast: () => Promise<void>;
   clearMenuAnalysis: () => void;
   checkStockForSale: (cart: {item: MenuItem, quantity: number}[]) => { status: 'OK' | 'BLOCKED' | 'NEEDS_CONFIRMATION', insufficientItems: InsufficientItem[] };
-  processTransaction: (cart: {item: MenuItem, quantity: number}[], paymentDetails: { operator: User, method: PaymentMethod, discount: number, tax: number, shiftId?: string, customerPhoneNumber?: string, pointsUsed?: number }) => { newSale: Sale, inventoryShortage: boolean; prepShortage: boolean; };
-  startShift: (startingCash: number, operator: User) => void;
-  closeShift: (shiftId: string, actualCash: number, bankDeposit: number) => void;
+  processTransaction: (cart: {item: MenuItem, quantity: number}[], paymentDetails: { operator: User, method: PaymentMethod, discount: number, tax: number, shiftId?: string, customerPhoneNumber?: string, pointsUsed?: number, walletAmountUsed?: number }) => Promise<{ newSale: Sale, inventoryShortage: boolean; prepShortage: boolean; }>;
+  startShift: (startingCash: number, operator: User) => Promise<void>;
+  closeShift: (shiftId: string, actualCash: number, bankDeposit: number) => Promise<void>;
   // Action Center Actions
-  addManagerTask: (taskDraft: Omit<ManagerTask, 'id' | 'createdAt' | 'updatedAt' | 'status'>) => void;
-  updateManagerTask: (taskId: string, updates: Partial<ManagerTask>) => void;
+  addManagerTask: (taskDraft: Omit<ManagerTask, 'id' | 'createdAt' | 'updatedAt' | 'status'>) => Promise<void>;
+  updateManagerTask: (taskId: string, updates: Partial<ManagerTask>) => Promise<void>;
   generateTasksFromRules: () => void;
   // Backup & Restore
   restoreState: (data: Partial<BackupData['data']>) => void;
@@ -129,10 +130,21 @@ export const useRestaurantStore = create<RestaurantStore>()(
     setAuditLogs: (updater) => set(state => ({ auditLogs: typeof updater === 'function' ? updater(state.auditLogs) : updater })),
     setCustomers: (updater) => set(state => ({ customers: typeof updater === 'function' ? updater(state.customers) : updater })),
     setManagerTasks: (updater) => set(state => ({ managerTasks: typeof updater === 'function' ? updater(state.managerTasks) : updater })),
-    setSettings: (updater) => set(state => ({ settings: typeof updater === 'function' ? updater(state.settings) : updater })),
+    setSettings: async (updater) => {
+        const prev = get().settings;
+        const next = typeof updater === 'function' ? (updater as any)(prev) : updater;
+        set({ settings: next });
+        try {
+            const { error } = await supabase.from('settings').upsert(next);
+            if (error) throw error;
+        } catch (error) {
+            set({ settings: prev });
+            throw error;
+        }
+    },
     addTransaction: (transaction) => set(state => ({ transactions: [transaction, ...state.transactions] })),
 
-    addAuditLogDetailed: (action, entity, entityId, before, after, details, user) => {
+    addAuditLogDetailed: async (action, entity, entityId, before, after, details, user) => {
       const logEntry: AuditLog = {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
@@ -146,10 +158,15 @@ export const useRestaurantStore = create<RestaurantStore>()(
         details,
       };
       set(state => ({ auditLogs: [logEntry, ...state.auditLogs] }));
+      try {
+          await supabase.from('audit_logs').insert(logEntry);
+      } catch (e) {
+          console.error("Failed to persist audit log", e);
+      }
     },
 
-    addAuditLog: (action, entity, details) => {
-      get().addAuditLogDetailed(action, entity, null, null, null, details, null);
+    addAuditLog: async (action, entity, details) => {
+      await get().addAuditLogDetailed(action, entity, null, null, null, details, null);
     },
 
     resetData: () => {
@@ -192,7 +209,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
       const result = await gemini.generateOperationalForecast(sales, prepTasks);
       if (result) set({ operationalForecast: result });
     },
-    startShift: (startingCash, operator) => {
+    startShift: async (startingCash, operator) => {
         const { shifts, addAuditLogDetailed } = get();
         if (shifts.some(s => s.status === 'open')) {
             throw new Error('یک شیفت باز در حال حاضر وجود دارد. ابتدا آن را ببندید.');
@@ -204,10 +221,18 @@ export const useRestaurantStore = create<RestaurantStore>()(
             status: 'open',
             operatorName: operator.fullName,
         };
+        const prevShifts = [...shifts];
         set(state => ({ shifts: [newShift, ...state.shifts] }));
-        addAuditLogDetailed('CREATE', 'SHIFT', newShift.id, null, newShift, `Shift started with starting cash ${startingCash}`, operator);
+        try {
+            const { error } = await supabase.from('shifts').insert(newShift);
+            if (error) throw error;
+            await addAuditLogDetailed('CREATE', 'SHIFT', newShift.id, null, newShift, `Shift started with starting cash ${startingCash}`, operator);
+        } catch (error) {
+            set({ shifts: prevShifts });
+            throw error;
+        }
     },
-    closeShift: (shiftId, actualCash, bankDeposit) => {
+    closeShift: async (shiftId, actualCash, bankDeposit) => {
         const { shifts, sales, addAuditLogDetailed } = get();
         const shiftToClose = shifts.find(s => s.id === shiftId && s.status === 'open');
         if (!shiftToClose) {
@@ -234,8 +259,16 @@ export const useRestaurantStore = create<RestaurantStore>()(
             status: 'closed'
         };
         
+        const prevShifts = [...shifts];
         set(state => ({ shifts: state.shifts.map(s => s.id === shiftId ? closedShift : s) }));
-        addAuditLogDetailed('SHIFT_CLOSE', 'SHIFT', shiftId, shiftToClose, closedShift, `Shift closed. Discrepancy: ${discrepancy}`, null);
+        try {
+            const { error } = await supabase.from('shifts').update(closedShift).eq('id', shiftId);
+            if (error) throw error;
+            await addAuditLogDetailed('SHIFT_CLOSE', 'SHIFT', shiftId, shiftToClose, closedShift, `Shift closed. Discrepancy: ${discrepancy}`, null);
+        } catch (error) {
+            set({ shifts: prevShifts });
+            throw error;
+        }
     },
     checkStockForSale: (cart) => {
       const { inventory, prepTasks, settings } = get();
@@ -259,8 +292,8 @@ export const useRestaurantStore = create<RestaurantStore>()(
       return { status: 'OK', insufficientItems: [] };
     },
      // --- Action Center Actions ---
-    addManagerTask: (taskDraft: Omit<ManagerTask, 'id' | 'createdAt' | 'updatedAt' | 'status'>) => {
-      const { addAuditLog } = get();
+    addManagerTask: async (taskDraft: Omit<ManagerTask, 'id' | 'createdAt' | 'updatedAt' | 'status'>) => {
+      const { addAuditLog, managerTasks } = get();
       const now = Date.now();
       const newTask: ManagerTask = {
         ...taskDraft,
@@ -269,20 +302,36 @@ export const useRestaurantStore = create<RestaurantStore>()(
         createdAt: now,
         updatedAt: now,
       };
+      const prevTasks = [...managerTasks];
       set(state => ({ managerTasks: [newTask, ...state.managerTasks] }));
-      addAuditLog('CREATE', 'ACTION_CENTER', `Task created: ${newTask.title}`);
+      try {
+          const { error } = await supabase.from('manager_tasks').insert(newTask);
+          if (error) throw error;
+          await addAuditLog('CREATE', 'ACTION_CENTER', `Task created: ${newTask.title}`);
+      } catch (error) {
+          set({ managerTasks: prevTasks });
+          throw error;
+      }
     },
 
-    updateManagerTask: (taskId, updates) => {
-      const { addAuditLog } = get();
+    updateManagerTask: async (taskId, updates) => {
+      const { addAuditLog, managerTasks } = get();
+      const prevTasks = [...managerTasks];
       set(state => ({
         managerTasks: state.managerTasks.map(task => 
           task.id === taskId ? { ...task, ...updates, updatedAt: Date.now() } : task
         ),
       }));
-      if(updates.status) {
-        const task = get().managerTasks.find(t => t.id === taskId);
-        addAuditLog('UPDATE', 'ACTION_CENTER', `Task status changed: "${task?.title}" to ${updates.status}`);
+      try {
+          const { error } = await supabase.from('manager_tasks').update({ ...updates, updated_at: Date.now() }).eq('id', taskId);
+          if (error) throw error;
+          if(updates.status) {
+            const task = get().managerTasks.find(t => t.id === taskId);
+            await addAuditLog('UPDATE', 'ACTION_CENTER', `Task status changed: "${task?.title}" to ${updates.status}`);
+          }
+      } catch (error) {
+          set({ managerTasks: prevTasks });
+          throw error;
       }
     },
 
@@ -348,8 +397,13 @@ export const useRestaurantStore = create<RestaurantStore>()(
          return newTasksCreated;
     },
     // Complex Business Logic
-    processTransaction: (cart, paymentDetails) => {
+    processTransaction: async (cart, paymentDetails) => {
       const { inventory, prepTasks, customers, settings, addAuditLogDetailed } = get();
+      const prevState = {
+          sales: get().sales, inventory: get().inventory, prepTasks: get().prepTasks,
+          customers: get().customers, auditLogs: get().auditLogs, invoiceCounter: get().invoiceCounter
+      };
+
       let subtotal = 0;
       const saleItems: SaleItem[] = cart.map(cartItem => {
           const itemCost = calculateRecipeCost(cartItem.item.recipe, inventory, prepTasks);
@@ -361,6 +415,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
       const totalAmount = subtotal * (1 + (paymentDetails.tax || 0) / 100) - (paymentDetails.discount || 0);
       
       let customerId: string | undefined = undefined;
+      let updatedCustomer: Customer | null = null;
       
       // --- CUSTOMER LOGIC ---
       if (paymentDetails.customerPhoneNumber) {
@@ -376,7 +431,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
               isNewCustomer = true;
           }
 
-          const updatedCustomer = { ...customer };
+          updatedCustomer = { ...customer };
           // Standard customer stats update
           updatedCustomer.totalVisits += 1;
           updatedCustomer.totalSpent += totalAmount;
@@ -386,39 +441,20 @@ export const useRestaurantStore = create<RestaurantStore>()(
           // --- MODULAR LOYALTY REWARD CALCULATION ---
           const loyaltySettings = settings.loyaltySettings;
           if (loyaltySettings && loyaltySettings.enabled) {
-              const beforeLoyaltyState = { loyaltyPoints: updatedCustomer.loyaltyPoints, walletBalance: updatedCustomer.walletBalance };
-
               if (loyaltySettings.programType === 'cashback' && loyaltySettings.cashbackPercentage > 0) {
                   const cashbackEarned = Math.round(totalAmount * (loyaltySettings.cashbackPercentage / 100));
-                  if (cashbackEarned > 0) {
-                      updatedCustomer.walletBalance += cashbackEarned;
-                      addAuditLogDetailed('UPDATE', 'CUSTOMER' as any, updatedCustomer.id,
-                          { walletBalance: beforeLoyaltyState.walletBalance },
-                          { walletBalance: updatedCustomer.walletBalance },
-                          `${cashbackEarned.toLocaleString()} تومان اعتبار کش‌بک به کیف پول مشتری اضافه شد.`,
-                          paymentDetails.operator
-                      );
+                  const walletUsed = paymentDetails.walletAmountUsed || 0;
+                  if (cashbackEarned > 0 || walletUsed > 0) {
+                      updatedCustomer.walletBalance = Math.max(0, updatedCustomer.walletBalance + cashbackEarned - walletUsed);
                   }
               } else if (loyaltySettings.programType === 'points' && loyaltySettings.pointsRate > 0) {
                   const pointsEarned = Math.floor(totalAmount / loyaltySettings.pointsRate);
                   const pointsUsed = paymentDetails.pointsUsed || 0;
-                  
                   if (pointsEarned > 0 || pointsUsed > 0) {
                       updatedCustomer.loyaltyPoints = Math.max(0, updatedCustomer.loyaltyPoints + pointsEarned - pointsUsed);
-                      let logDetails = '';
-                      if (pointsEarned > 0) logDetails += `${pointsEarned} امتیاز کسب شد. `;
-                      if (pointsUsed > 0) logDetails += `${pointsUsed} امتیاز استفاده شد.`;
-
-                      addAuditLogDetailed('UPDATE', 'CUSTOMER' as any, updatedCustomer.id,
-                          { loyaltyPoints: beforeLoyaltyState.loyaltyPoints },
-                          { loyaltyPoints: updatedCustomer.loyaltyPoints },
-                          logDetails.trim(),
-                          paymentDetails.operator
-                      );
                   }
               }
           }
-          // --- END LOYALTY LOGIC ---
           
           // --- Favorite Items & Segmentation ---
           const updatedFavoriteItems = [...updatedCustomer.favoriteItems];
@@ -433,19 +469,16 @@ export const useRestaurantStore = create<RestaurantStore>()(
           updatedCustomer.favoriteItems = updatedFavoriteItems;
           updatedCustomer.segment = determineCustomerSegment(updatedCustomer);
 
-          // --- Persist Customer Update ---
+          // --- Local State Update ---
           if (isNewCustomer) {
-              set(state => ({ customers: [...state.customers, updatedCustomer] }));
+              set(state => ({ customers: [...state.customers, updatedCustomer!] }));
           } else {
               set(state => ({
-                  customers: state.customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c)
+                  customers: state.customers.map(c => c.id === updatedCustomer!.id ? updatedCustomer! : c)
               }));
           }
-          
           customerId = updatedCustomer.id;
       }
-      // --- END CUSTOMER LOGIC ---
-
 
       const newSale: Sale = {
           id: crypto.randomUUID(), invoiceNumber: nextInvoiceNumber(() => get().invoiceCounter, (newCounter) => set({ invoiceCounter: newCounter })),
@@ -475,11 +508,9 @@ export const useRestaurantStore = create<RestaurantStore>()(
               if (deduction) {
                   const newStock = item.currentStock - deduction;
                   if (newStock < 0) inventoryShortage = true;
-
                   newLogs.push({
                       id: crypto.randomUUID(), timestamp: Date.now(), userId: paymentDetails.operator.id, userName: paymentDetails.operator.fullName,
-                      action: 'TRANSACTION', entity: 'INVENTORY', entityId: item.id,
-                      before: { currentStock: item.currentStock }, after: { currentStock: newStock },
+                      action: 'TRANSACTION', entity: 'INVENTORY', entityId: item.id, before: { currentStock: item.currentStock }, after: { currentStock: newStock },
                       details: `کسر از موجودی به دلیل فروش فاکتور ${newSale.invoiceNumber}`
                   });
                   return { ...item, currentStock: newStock };
@@ -493,26 +524,12 @@ export const useRestaurantStore = create<RestaurantStore>()(
                   const newOnHand = task.onHand - deduction;
                   if (newOnHand < 0 && task.onHand >= 0) {
                       prepShortage = true;
-                      
-                      const affectingMenuItems = cart
-                          .filter(cartItem => cartItem.item.recipe.some(r => r.ingredientId === task.id))
-                          .map(cartItem => `${cartItem.item.name} (x${cartItem.quantity})`)
-                          .join(', ');
-
+                      const affectingMenuItems = cart.filter(cartItem => cartItem.item.recipe.some(r => r.ingredientId === task.id)).map(cartItem => `${cartItem.item.name} (x${cartItem.quantity})`).join(', ');
                       tasksToCreate.push({
                           title: `کسری موجودی میزانپلاس: ${task.item}`,
                           description: `موجودی "${task.item}" به دلیل فروش "${affectingMenuItems}" منفی شد. لطفا تولید این آیتم را در اولویت قرار دهید.`,
-                          category: 'inventory' as ManagerTaskCategory,
-                          priority: 'high' as ManagerTaskPriority,
-                          evidence: [
-                              { type: 'metric', label: 'موجودی قبلی', value: `${task.onHand.toFixed(2)} ${task.unit}` },
-                              { type: 'metric', label: 'موجودی جدید', value: `${newOnHand.toFixed(2)} ${task.unit}` },
-                              { type: 'link', label: 'مشاهده آیتم', value: task.id, view: 'kitchen-prep' }
-                          ],
-                          source: 'rule' as ManagerTaskSource,
-                          createdByUserId: 'system',
-                          assignedToUserId: null,
-                          dueAt: null
+                          category: 'inventory', priority: 'high', evidence: [{ type: 'metric', label: 'موجودی قبلی', value: `${task.onHand.toFixed(2)} ${task.unit}` }, { type: 'metric', label: 'موجودی جدید', value: `${newOnHand.toFixed(2)} ${task.unit}` }, { type: 'link', label: 'مشاهده آیتم', value: task.id, view: 'kitchen-prep' }],
+                          source: 'rule', createdByUserId: 'system', assignedToUserId: null, dueAt: null
                       });
                   }
                   return { ...task, onHand: newOnHand };
@@ -527,13 +544,37 @@ export const useRestaurantStore = create<RestaurantStore>()(
               auditLogs: [...newLogs, ...state.auditLogs]
           }));
           
-          tasksToCreate.forEach(taskDraft => get().addManagerTask(taskDraft));
+          // Persistence
+          const p: Promise<any>[] = [
+              supabase.from('sales').insert(newSale),
+              supabase.from('audit_logs').insert(newLogs),
+              supabase.from('settings').update({ invoiceCounter: get().invoiceCounter }).eq('restaurantName', settings.restaurantName)
+          ];
 
-          get().addAuditLogDetailed('CREATE', 'SALE', newSale.id, null, newSale, `فاکتور ${newSale.invoiceNumber} ثبت شد.`, paymentDetails.operator);
+          inventoryDeductions.forEach((_, id) => {
+              const item = updatedInventory.find(i => i.id === id);
+              if(item) p.push(supabase.from('inventory').update({ currentStock: item.currentStock }).eq('id', id));
+          });
+          prepDeductions.forEach((_, id) => {
+              const task = updatedPrepTasks.find(t => t.id === id);
+              if(task) p.push(supabase.from('prep_tasks').update({ onHand: task.onHand }).eq('id', id));
+          });
+          if (updatedCustomer) p.push(supabase.from('customers').upsert(updatedCustomer));
+
+          const results = await Promise.all(p);
+          const err = results.find(r => r.error);
+          if (err) throw err.error;
+
+          for (const taskDraft of tasksToCreate) {
+              await get().addManagerTask(taskDraft);
+          }
+          await get().addAuditLogDetailed('CREATE', 'SALE', newSale.id, null, newSale, `فاکتور ${newSale.invoiceNumber} ثبت شد.`, paymentDetails.operator);
+
           return { newSale, inventoryShortage, prepShortage };
 
       } catch (error: any) {
-          console.error("Transaction failed during deduction calculation:", error.message);
+          set(prevState);
+          console.error("Transaction failed:", error.message);
           throw error;
       }
     },

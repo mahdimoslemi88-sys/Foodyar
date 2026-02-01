@@ -141,8 +141,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, c
         const executeTransaction = async () => {
             try {
                 const currentShift = useRestaurantStore.getState().shifts.find(s => s.status === 'open');
-                // @ts-ignore - walletAmountUsed is a new property not yet in the store type definition
-                const { newSale, inventoryShortage, prepShortage } = processTransaction(cart, {
+                const { newSale, inventoryShortage, prepShortage } = await processTransaction(cart, {
                     operator: currentUser,
                     method: paymentMethod,
                     discount: totalDiscount,
@@ -187,8 +186,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, c
             
             setIsProcessing(true);
             const currentShift = useRestaurantStore.getState().shifts.find(s => s.status === 'open');
-            // @ts-ignore
-            const { newSale } = processTransaction(cart, {
+            const { newSale } = await processTransaction(cart, {
                 operator: currentUser!, method: paymentMethod, discount: totalDiscount, tax: settings.taxRate,
                 shiftId: currentShift?.id, customerPhoneNumber: customerPhoneNumber, pointsUsed: pointsToUse, walletAmountUsed: walletDiscount
             });

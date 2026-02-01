@@ -10,8 +10,9 @@ interface MenuCardViewProps {
     onDelete: (id: string) => void;
 }
 
-export const MenuCardView: React.FC<MenuCardViewProps> = ({ menuItems, onEdit, onDelete }) => {
-    const { inventory, prepTasks } = useRestaurantStore.getState();
+export const MenuCardView: React.FC<MenuCardViewProps> = React.memo(({ menuItems, onEdit, onDelete }) => {
+    const inventory = useRestaurantStore(state => state.inventory);
+    const prepTasks = useRestaurantStore(state => state.prepTasks);
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -98,4 +99,6 @@ export const MenuCardView: React.FC<MenuCardViewProps> = ({ menuItems, onEdit, o
             })}
         </div>
     );
-};
+});
+
+MenuCardView.displayName = 'MenuCardView';

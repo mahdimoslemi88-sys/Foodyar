@@ -18,7 +18,7 @@ const AIInsight: React.FC<{ suggestion: string }> = ({ suggestion }) => (
     </div>
 );
 
-export const InventoryCardView: React.FC<InventoryCardViewProps> = ({ inventory, onEdit, onWaste, onDelete }) => {
+export const InventoryCardView: React.FC<InventoryCardViewProps> = React.memo(({ inventory, onEdit, onWaste, onDelete }) => {
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     
     const itemForAISuggestion = React.useMemo(() => {
@@ -80,4 +80,6 @@ export const InventoryCardView: React.FC<InventoryCardViewProps> = ({ inventory,
             })}
         </div>
     );
-};
+});
+
+InventoryCardView.displayName = 'InventoryCardView';

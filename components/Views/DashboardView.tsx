@@ -21,7 +21,16 @@ const ActionIcon: React.FC<{ type: AIAction['actionType'] }> = ({ type }) => {
 }
 
 export const DashboardView: React.FC<DashboardProps> = ({ onNavigate }) => {
-  const { sales, menu, expenses, wasteRecords, prepTasks, menuAnalysisRun, generateMenuAnalysis, clearMenuAnalysis } = useRestaurantStore();
+  const sales = useRestaurantStore(state => state.sales);
+  const menu = useRestaurantStore(state => state.menu);
+  const expenses = useRestaurantStore(state => state.expenses);
+  const wasteRecords = useRestaurantStore(state => state.wasteRecords);
+  const prepTasks = useRestaurantStore(state => state.prepTasks);
+  const inventory = useRestaurantStore(state => state.inventory);
+  const menuAnalysisRun = useRestaurantStore(state => state.menuAnalysisRun);
+  const generateMenuAnalysis = useRestaurantStore(state => state.generateMenuAnalysis);
+  const clearMenuAnalysis = useRestaurantStore(state => state.clearMenuAnalysis);
+
   const { showToast } = useToast();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -31,7 +40,7 @@ export const DashboardView: React.FC<DashboardProps> = ({ onNavigate }) => {
     setIsMounted(true);
   }, []);
 
-  const brief = useMemo(() => generateDailyBrief({ sales, menu, inventory: useRestaurantStore.getState().inventory, wasteRecords, prepTasks }), [sales, menu, useRestaurantStore.getState().inventory, wasteRecords, prepTasks]);
+  const brief = useMemo(() => generateDailyBrief({ sales, menu, inventory, wasteRecords, prepTasks }), [sales, menu, inventory, wasteRecords, prepTasks]);
   
   const chartData = sales.slice(-20).map((sale) => ({
     amt: sale.totalAmount,

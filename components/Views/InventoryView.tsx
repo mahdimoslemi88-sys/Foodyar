@@ -15,7 +15,12 @@ import { InventoryCardView } from '../Inventory/InventoryCardView';
 import { InventoryTableView } from '../Inventory/InventoryTableView';
 
 export const InventoryView: React.FC = () => {
-  const { inventory, setInventory, addAuditLog, navigationIntent, clearNavigationIntent } = useRestaurantStore();
+  const inventory = useRestaurantStore(state => state.inventory);
+  const setInventory = useRestaurantStore(state => state.setInventory);
+  const addAuditLog = useRestaurantStore(state => state.addAuditLog);
+  const navigationIntent = useRestaurantStore(state => state.navigationIntent);
+  const clearNavigationIntent = useRestaurantStore(state => state.clearNavigationIntent);
+
   const { showModal } = useModal();
   const { showToast } = useToast();
 
@@ -38,7 +43,7 @@ export const InventoryView: React.FC = () => {
   const activeInventory = useMemo(() => inventory.filter(i => !i.isDeleted), [inventory]);
 
   const totalItems = activeInventory.length;
-  const totalValue = activeInventory.reduce((acc, i) => acc + calculateInventoryItemValue(i), 0);
+  const totalValue = useMemo(() => activeInventory.reduce((acc, i) => acc + calculateInventoryItemValue(i), 0), [activeInventory]);
 
   const filteredInventory = useMemo(() => {
     return activeInventory.filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()));

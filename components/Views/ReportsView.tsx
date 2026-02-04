@@ -9,10 +9,13 @@ import { EmptyState } from '../EmptyState';
 import { exportSales, exportExpenses } from '../../services/excelService';
 
 export const ReportsView: React.FC = () => {
-  const { 
-    sales, menu, expenses, setExpenses, shifts, 
-    wasteRecords, addAuditLog
-  } = useRestaurantStore();
+  const sales = useRestaurantStore(state => state.sales);
+  const menu = useRestaurantStore(state => state.menu);
+  const expenses = useRestaurantStore(state => state.expenses);
+  const setExpenses = useRestaurantStore(state => state.setExpenses);
+  const shifts = useRestaurantStore(state => state.shifts);
+  const wasteRecords = useRestaurantStore(state => state.wasteRecords);
+  const addAuditLog = useRestaurantStore(state => state.addAuditLog);
   const { showModal } = useModal();
   const { showToast } = useToast();
   
@@ -28,14 +31,14 @@ export const ReportsView: React.FC = () => {
     setIsMounted(true);
   }, []);
 
-  const totalRevenue = sales.filter(s => s.shiftId ? s.paymentMethod !== 'void' : true).reduce((acc, sale) => acc + sale.totalAmount, 0);
-  const totalCOGS = sales.reduce((acc, sale) => acc + sale.totalCost, 0);
-  const totalWasteLoss = wasteRecords.reduce((acc, w) => acc + w.costLoss, 0);
+  const totalRevenue = useMemo(() => sales.filter(s => s.shiftId ? s.paymentMethod !== 'void' : true).reduce((acc, sale) => acc + sale.totalAmount, 0), [sales]);
+  const totalCOGS = useMemo(() => sales.reduce((acc, sale) => acc + sale.totalCost, 0), [sales]);
+  const totalWasteLoss = useMemo(() => wasteRecords.reduce((acc, w) => acc + w.costLoss, 0), [wasteRecords]);
   
-  const grossProfit = totalRevenue - totalCOGS;
-  const totalOpEx = expenses.reduce((acc, exp) => acc + exp.amount, 0);
+  const grossProfit = useMemo(() => totalRevenue - totalCOGS, [totalRevenue, totalCOGS]);
+  const totalOpEx = useMemo(() => expenses.reduce((acc, exp) => acc + exp.amount, 0), [expenses]);
   
-  const netProfit = grossProfit - totalOpEx - totalWasteLoss;
+  const netProfit = useMemo(() => grossProfit - totalOpEx - totalWasteLoss, [grossProfit, totalOpEx, totalWasteLoss]);
 
   const handleAddExpense = () => {
     if (!expTitle || expAmount <= 0) return;

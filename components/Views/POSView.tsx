@@ -12,11 +12,19 @@ import { CheckoutModal } from '../POS/CheckoutModal';
 import { ShiftControlView } from '../POS/ShiftControlView';
 import { CloseShiftModal } from '../POS/CloseShiftModal';
 
+const getItemIcon = (cat: string) => {
+  if (cat.includes('نوشیدنی') || cat.includes('قهوه')) return <Coffee className="w-6 h-6" />;
+  if (cat.includes('پیتزا') || cat.includes('فست')) return <Pizza className="w-6 h-6" />;
+  return <Utensils className="w-6 h-6" />;
+};
+
 // Main POS Component
 export const POSView: React.FC = () => {
-  const { menu, shifts, settings } = useRestaurantStore();
+  const menu = useRestaurantStore(state => state.menu);
+  const shifts = useRestaurantStore(state => state.shifts);
+  const settings = useRestaurantStore(state => state.settings);
   
-  const currentShift = shifts.find(s => s.status === 'open');
+  const currentShift = useMemo(() => shifts.find(s => s.status === 'open'), [shifts]);
 
   const [cart, setCart] = useState<{item: MenuItem, quantity: number}[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('همه');
@@ -28,7 +36,7 @@ export const POSView: React.FC = () => {
   const activeMenu = useMemo(() => menu.filter(m => !m.isDeleted), [menu]);
 
   // FIX: Add explicit type annotation to the Set generic to resolve 'unknown' type errors during mapping.
-  const categories: string[] = ['همه', ...new Set<string>(activeMenu.map((m: MenuItem) => m.category))];
+  const categories: string[] = useMemo(() => ['همه', ...new Set<string>(activeMenu.map((m: MenuItem) => m.category))], [activeMenu]);
 
   const filteredMenu = useMemo(() => {
     return activeMenu
@@ -63,15 +71,9 @@ export const POSView: React.FC = () => {
     });
   };
 
-  const total = cart.reduce((sum, c) => sum + (c.item.price * c.quantity), 0);
-  const totalItems = cart.reduce((sum, c) => sum + c.quantity, 0);
+  const total = useMemo(() => cart.reduce((sum, c) => sum + (c.item.price * c.quantity), 0), [cart]);
+  const totalItems = useMemo(() => cart.reduce((sum, c) => sum + c.quantity, 0), [cart]);
   
-  const getItemIcon = (cat: string) => {
-    if (cat.includes('نوشیدنی') || cat.includes('قهوه')) return <Coffee className="w-6 h-6" />;
-    if (cat.includes('پیتزا') || cat.includes('فست')) return <Pizza className="w-6 h-6" />;
-    return <Utensils className="w-6 h-6" />;
-  };
-
   return (
     <div className="flex h-full w-full bg-[#F3F4F6] overflow-hidden relative">
       <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden pt-20 md:pt-0">

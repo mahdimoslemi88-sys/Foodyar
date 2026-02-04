@@ -10,11 +10,12 @@ import { PrepWasteModal } from '../KitchenPrep/PrepWasteModal';
 import { PrepRecipeModal } from '../KitchenPrep/PrepRecipeModal';
 
 export const KitchenPrepView: React.FC = () => {
-  const { 
-      prepTasks, setPrepTasks, 
-      operationalForecast, generateOperationalForecast,
-      navigationIntent, clearNavigationIntent
-  } = useRestaurantStore();
+  const prepTasks = useRestaurantStore(state => state.prepTasks);
+  const setPrepTasks = useRestaurantStore(state => state.setPrepTasks);
+  const operationalForecast = useRestaurantStore(state => state.operationalForecast);
+  const generateOperationalForecast = useRestaurantStore(state => state.generateOperationalForecast);
+  const navigationIntent = useRestaurantStore(state => state.navigationIntent);
+  const clearNavigationIntent = useRestaurantStore(state => state.clearNavigationIntent);
 
   const [activeStation, setActiveStation] = useState<string>('همه');
   const [searchQuery, setSearchQuery] = useState('');
@@ -30,11 +31,11 @@ export const KitchenPrepView: React.FC = () => {
 
   const stations = ['همه', 'گریل', 'سرد', 'سرخ کن', 'آماده‌سازی'];
 
-  const filteredTasks = prepTasks.filter(task => {
+  const filteredTasks = useMemo(() => prepTasks.filter(task => {
     const matchesStation = activeStation === 'همه' || task.station === activeStation;
     const matchesSearch = task.item.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesStation && matchesSearch;
-  });
+  }), [prepTasks, activeStation, searchQuery]);
   
   const openModal = (modalType: 'recipe' | 'production' | 'waste' | 'add', task?: PrepTask) => {
       setSelectedTask(task || null);

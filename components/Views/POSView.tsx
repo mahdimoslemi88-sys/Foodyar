@@ -1,22 +1,52 @@
-import React, { useState, useMemo } from 'react';
-import { MenuItem, PaymentMethod } from '../../types';
+import React, { useState, useMemo, useCallback } from 'react';
+import { MenuItem } from '../../types';
 import { useRestaurantStore } from '../../store/restaurantStore';
-import { useAuth } from '../../contexts/AuthContext';
-import { useToast } from '../../contexts/ToastContext';
 import { 
-  ShoppingCart, Search, 
-  Coffee, Pizza, Utensils, Receipt, 
-  Lock, Loader2, ArrowRight, PowerOff
+  Search,
+  Coffee, Pizza, Utensils,
+  ArrowRight, PowerOff
 } from 'lucide-react';
 import { CheckoutModal } from '../POS/CheckoutModal';
 import { ShiftControlView } from '../POS/ShiftControlView';
 import { CloseShiftModal } from '../POS/CloseShiftModal';
 
+// Hoist static utility outside component to prevent re-creation
+const getItemIcon = (cat: string) => {
+  if (cat.includes('نوشیدنی') || cat.includes('قهوه')) return <Coffee className="w-6 h-6" />;
+  if (cat.includes('پیتزا') || cat.includes('فست')) return <Pizza className="w-6 h-6" />;
+  return <Utensils className="w-6 h-6" />;
+};
+
+// Extracted memoized item component to prevent unnecessary re-renders in the grid
+interface MenuItemButtonProps {
+  item: MenuItem;
+  onClick: (item: MenuItem) => void;
+  isAnimated: boolean;
+}
+
+const MenuItemButton = React.memo(({ item, onClick, isAnimated }: MenuItemButtonProps) => (
+  <button
+    onClick={() => onClick(item)}
+    className={`bg-white rounded-3xl p-4 text-center group active:scale-95 transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-indigo-100/50 border border-transparent hover:border-indigo-100 ${isAnimated ? 'animate-pop' : ''}`}
+  >
+    <div className="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto text-indigo-500 mb-4 group-hover:bg-indigo-50 transition-colors">
+      {getItemIcon(item.category)}
+    </div>
+    <p className="font-bold text-slate-800 text-sm leading-tight h-10">{item.name}</p>
+    <p className="text-xs text-slate-400 mt-2 font-medium">{(item.price).toLocaleString()} ت</p>
+  </button>
+));
+
+MenuItemButton.displayName = 'MenuItemButton';
+
 // Main POS Component
 export const POSView: React.FC = () => {
-  const { menu, shifts, settings } = useRestaurantStore();
+  // Optimization: Use individual selectors to prevent re-renders when unrelated store state changes
+  const menu = useRestaurantStore(state => state.menu);
+  const shifts = useRestaurantStore(state => state.shifts);
+  const settings = useRestaurantStore(state => state.settings);
   
-  const currentShift = shifts.find(s => s.status === 'open');
+  const currentShift = useMemo(() => shifts.find(s => s.status === 'open'), [shifts]);
 
   const [cart, setCart] = useState<{item: MenuItem, quantity: number}[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('همه');
@@ -27,16 +57,20 @@ export const POSView: React.FC = () => {
 
   const activeMenu = useMemo(() => menu.filter(m => !m.isDeleted), [menu]);
 
-  // FIX: Add explicit type annotation to the Set generic to resolve 'unknown' type errors during mapping.
-  const categories: string[] = ['همه', ...new Set<string>(activeMenu.map((m: MenuItem) => m.category))];
+  // Optimization: Memoize categories calculation
+  const categories = useMemo(() => ['همه', ...new Set<string>(activeMenu.map((m: MenuItem) => m.category))], [activeMenu]);
 
+  // Optimization: Combined filter passes and hoisted toLowerCase for better performance
   const filteredMenu = useMemo(() => {
-    return activeMenu
-      .filter(m => selectedCategory === 'همه' || m.category === selectedCategory)
-      .filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    const query = searchQuery.toLowerCase();
+    return activeMenu.filter(m =>
+      (selectedCategory === 'همه' || m.category === selectedCategory) &&
+      m.name.toLowerCase().includes(query)
+    );
   }, [activeMenu, selectedCategory, searchQuery]);
 
-  const addToCart = (item: MenuItem) => {
+  // Optimization: Wrap event handlers in useCallback
+  const addToCart = useCallback((item: MenuItem) => {
     setAnimatedItemId(item.id);
     setTimeout(() => setAnimatedItemId(null), 300);
 
@@ -47,9 +81,9 @@ export const POSView: React.FC = () => {
       }
       return [...prev, { item, quantity: 1 }];
     });
-  };
+  }, []);
 
-  const updateQuantity = (itemId: string, delta: number) => {
+  const updateQuantity = useCallback((itemId: string, delta: number) => {
     setCart(prev => {
         const itemInCart = prev.find(c => c.item.id === itemId);
         if (itemInCart && itemInCart.quantity + delta <= 0) {
@@ -61,16 +95,15 @@ export const POSView: React.FC = () => {
             : c
         );
     });
-  };
+  }, []);
 
-  const total = cart.reduce((sum, c) => sum + (c.item.price * c.quantity), 0);
-  const totalItems = cart.reduce((sum, c) => sum + c.quantity, 0);
-  
-  const getItemIcon = (cat: string) => {
-    if (cat.includes('نوشیدنی') || cat.includes('قهوه')) return <Coffee className="w-6 h-6" />;
-    if (cat.includes('پیتزا') || cat.includes('فست')) return <Pizza className="w-6 h-6" />;
-    return <Utensils className="w-6 h-6" />;
-  };
+  // Optimization: Calculate totals in a single pass and memoize
+  const { total, totalItems } = useMemo(() => {
+    return cart.reduce((acc, c) => ({
+      total: acc.total + (c.item.price * c.quantity),
+      totalItems: acc.totalItems + c.quantity
+    }), { total: 0, totalItems: 0 });
+  }, [cart]);
 
   return (
     <div className="flex h-full w-full bg-[#F3F4F6] overflow-hidden relative">
@@ -87,7 +120,13 @@ export const POSView: React.FC = () => {
           {currentShift && (
             <div className="relative flex-1">
               <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-              <input type="text" placeholder="جستجوی آیتم..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-white border-none rounded-2xl p-4 pr-12 text-sm font-bold shadow-sm focus:ring-2 focus:ring-indigo-200 focus:outline-none" />
+              <input
+                type="text"
+                placeholder="جستجوی آیتم..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full bg-white border-none rounded-2xl p-4 pr-12 text-sm font-bold shadow-sm focus:ring-2 focus:ring-indigo-200 focus:outline-none"
+              />
             </div>
           )}
         </div>
@@ -96,7 +135,13 @@ export const POSView: React.FC = () => {
           <div className="px-4 md:px-6 py-3 shrink-0 overflow-x-auto no-scrollbar">
               <div className="flex gap-2 w-max">
                   {categories.map(cat => (
-                      <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-5 py-3 rounded-full text-sm font-bold transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${selectedCategory === cat ? 'bg-slate-900 text-white' : 'bg-white text-slate-500'}`}>{cat}</button>
+                      <button
+                        key={cat}
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`px-5 py-3 rounded-full text-sm font-bold transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${selectedCategory === cat ? 'bg-slate-900 text-white' : 'bg-white text-slate-500'}`}
+                      >
+                        {cat}
+                      </button>
                   ))}
               </div>
           </div>
@@ -114,13 +159,12 @@ export const POSView: React.FC = () => {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {filteredMenu.map(item => (
-                <button key={item.id} onClick={() => addToCart(item)} className={`bg-white rounded-3xl p-4 text-center group active:scale-95 transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-indigo-100/50 border border-transparent hover:border-indigo-100 ${animatedItemId === item.id ? 'animate-pop' : ''}`}>
-                  <div className="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto text-indigo-500 mb-4 group-hover:bg-indigo-50 transition-colors">
-                    {getItemIcon(item.category)}
-                  </div>
-                  <p className="font-bold text-slate-800 text-sm leading-tight h-10">{item.name}</p>
-                  <p className="text-xs text-slate-400 mt-2 font-medium">{(item.price).toLocaleString()} ت</p>
-                </button>
+                <MenuItemButton
+                  key={item.id}
+                  item={item}
+                  onClick={addToCart}
+                  isAnimated={animatedItemId === item.id}
+                />
               ))}
             </div>
           )}
